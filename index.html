@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的私人全功能音乐站</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(135deg, #12121e, #080711);
+            color: #fff;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            width: 100%;
+            max-width: 500px;
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(15px);
+            border-radius: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 25px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+            margin-bottom: 100px; /* 为底部常驻播放器留位置 */
+        }
+        h2 { text-align: center; font-weight: 400; color: #00f2fe; margin-top: 0; }
+        .search-box { display: flex; gap: 10px; margin-bottom: 20px; }
+        input {
+            flex: 1;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 30px;
+            background: rgba(255, 255, 255, 0.08);
+            color: #fff;
+            font-size: 15px;
+            outline: none;
+        }
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 30px;
+            background: linear-gradient(45deg, #00f2fe, #4facfe);
+            color: #fff;
+            font-size: 15px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        button:hover { opacity: 0.9; }
+        .song-list {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+        .song-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: 0.2s;
+            border-bottom: 1px solid rgba(255,255,255,0.02);
+        }
+        .song-item:hover { background: rgba(255, 255, 255, 0.08); }
+        .song-info { max-width: 80%; }
+        .song-name { font-size: 15px; font-weight: 500; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;}
+        .song-artist { font-size: 12px; color: #aaa; }
+        .play-icon { color: #00f2fe; font-size: 18px; font-weight: bold;}
+        
+        /* 底部迷你音乐控制台 */
+        .bottom-player {
+            position: fixed;
+            bottom: 0; left: 0; right: 0;
+            background: rgba(15, 15, 27, 0.9);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            z-index: 999;
+        }
+        .now-playing { font-size: 14px; color: #4facfe; text-align: center; }
+        audio { width: 100%; max-width: 500px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>我的云音乐站</h2>
+    <div class="search-box">
+        <input type="text" id="keyword" placeholder="搜歌名、歌手、歌词..." onkeydown="if(event.keyCode==13) searchMusic()">
+        <button onclick="searchMusic()">搜索</button>
+    </div>
+    
+    <div class="song-list" id="listContainer">
+        <div style="text-align: center; color: #666; margin-top: 40px;">在上方输入关键词开始探索</div>
+    </div>
+</div>
+
+<div class="bottom-player" id="playerBar" style="display: none;">
+    <div class="now-playing" id="currentTrack">正在播放: --</div>
+    <audio id="mainPlayer" controls autoplay></audio>
+</div>
+
+<script>
+    // 1. 搜索歌曲
+    async function searchMusic() {
+        const key = document.getElementById('keyword').value.trim();
+        const container = document.getElementById('listContainer');
+        if (!key) return;
+
+        container.innerHTML = '<div style="text-align: center; color: #00f2fe; margin-top: 40px;">正在从云端搜寻中...</div>';
+
+        try {
+            const res = await fetch(`/api?key=${encodeURIComponent(key)}`);
+            const result = await res.json();
+
+            if (result.code === 200 && result.data.length > 0) {
+                container.innerHTML = '';
+                result.data.forEach(song => {
+                    const div = document.createElement('div');
+                    div.className = 'song-item';
+                    div.onclick = () => loadAndPlay(song.mid, song.name, song.artist);
+                    div.innerHTML = `
+                        <div class="song-info">
+                            <div class="song-name">${song.name}</div>
+                            <div class="song-artist">${song.artist} · 《${song.album || '未知专辑'}》</div>
+                        </div>
+                        <div class="play-icon">▶</div>
+                    `;
+                    container.appendChild(div);
+                });
+            } else {
+                container.innerHTML = '<div style="text-align: center; color: #ff758c; margin-top: 40px;">没有找到相关歌曲，换个词试试？</div>';
+            }
+        } catch (err) {
+            container.innerHTML = '<div style="text-align: center; color: #ff758c; margin-top: 40px;">联网搜索失败</div>';
+        }
+    }
+
+    // 2. 解析直链并播放
+    async function loadAndPlay(mid, name, artist) {
+        const playerBar = document.getElementById('playerBar');
+        const currentTrack = document.getElementById('currentTrack');
+        const player = document.getElementById('mainPlayer');
+
+        playerBar.style.display = 'flex';
+        currentTrack.innerText = `正在解析防盗链: ${name} - ${artist}...`;
+        player.src = ''; // 先清空，防止播放旧歌
+
+        try {
+            const res = await fetch(`/api?mid=${mid}`);
+            const data = await res.json();
+
+            if (data.code === 200 && data.audio_url) {
+                currentTrack.innerText = `🎵 正在播放: ${name} - ${artist}`;
+                player.src = data.audio_url;
+                player.play();
+            } else {
+                currentTrack.innerText = `❌ ${name} 解析失败，可能由于版权受限`;
+            }
+        } catch (err) {
+            currentTrack.innerText = `❌ 请求失败，网络错误`;
+        }
+    }
+</script>
+
+</body>
+</html>
